@@ -88,11 +88,11 @@ async def send_new_link_notification(links):
                         sent_msg = await User.send_document(
                             chat_id=GROUP_ID,
                             document=local_filename,
-                            thumb="database/thumb.jpeg",
+                            thumb="database/thumb.jpg",
                             caption=f"""
-<b>@MadxBotz {link['name']}
+<b>@ADDAFILES {link['name']}
 
-<blockquote>〽️ Powered by @MadxBotz</blockquote></b>""",
+<blockquote>〽️ Powered by @ADDAFILES</blockquote></b>""",
                         )
 
                         await User.send_message(
@@ -104,11 +104,11 @@ async def send_new_link_notification(links):
                         sent_msg = await User.send_document(
                             chat_id=RSS_CHAT,
                             document=local_filename,
-                            thumb="database/thumb.jpeg",
+                            thumb="database/thumb.jpg",
                             caption=f"""
-<b>@MadxBotz {link['name']}
+<b>@ADDAFILES {link['name']}
 
-<blockquote>〽️ Powered by @MadxBotz</blockquote></b>""",
+<blockquote>〽️ Powered by @ADDAFILES</blockquote></b>""",
                         )
                     except Exception as e:
                         logging.error(
