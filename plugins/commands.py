@@ -27,9 +27,9 @@ async def start_handler(c, m):
             [
                 [InlineKeyboardButton("Hᴇʟᴩ Mᴇɴᴜ", callback_data="help")],
                 [
-                    InlineKeyboardButton("Cʜᴀɴɴᴇʟ", url="https://t.me/MadxBotz"),
+                    InlineKeyboardButton("Cʜᴀɴɴᴇʟ", url="https://t.me/ADDAFILES"),
                     InlineKeyboardButton(
-                        "Sᴜᴩᴩᴏʀᴛ", url=f"https://t.me/MadxBotzSupport"
+                        "Sᴜᴩᴩᴏʀᴛ", url=f"https://t.me/ADDAFILES"
                     ),
                 ],
                 [InlineKeyboardButton("Cʟᴏsᴇ ❌", callback_data="delete")],
@@ -47,7 +47,7 @@ async def link_count(c, m):
     try:
         total_link_count = await db.count_all_links()
 
-        msg = f"<b>📍Total Movies Scrapped : <code>{total_link_count}</code> \n\n<blockquote>〽️ Powered by @MadxMoviez</blockquote></b>"
+        msg = f"<b>📍Total Movies Scrapped : <code>{total_link_count}</code> \n\n<blockquote>〽️ Powered by @ADDAFILES</blockquote></b>"
         await m.reply_text(msg)
     except Exception as e:
         await m.reply_text(f"🌶️ Error retrieving counts: {e}")
@@ -133,7 +133,7 @@ async def page_scrap(client, message):
             caption += "<b>\n\nNo links available.</b>"
             captions.append(caption)
 
-        captions[-1] += "\n\n<b><blockquote>〽️ Powered by @MadxBotz</blockquote></b>"
+        captions[-1] += "\n\n<b><blockquote>〽️ Powered by @ADDAFILES</blockquote></b>"
 
         if img_url:
             await message.reply_photo(photo=img_url)
@@ -178,7 +178,7 @@ async def movie_result_1(client, message):
             else:
                 caption += "<b>\n\nNo links available.</b>"
 
-            caption += "\n\n<b><blockquote>〽️ Powered by @MadxBotz</blockquote></b>"
+            caption += "\n\n<b><blockquote>〽️ Powered by @ADDAFILES</blockquote></b>"
 
             if len(caption) > 1000:
                 if img_url:
@@ -249,7 +249,7 @@ async def movie_result_2(client, message):
             else:
                 caption += "<b>\n\nNo links available.</b>"
 
-            caption += "\n\n<b><blockquote>〽️ Powered by @MadxBotz</blockquote></b>"
+            caption += "\n\n<b><blockquote>〽️ Powered by @ADDAFILES</blockquote></b>"
 
             if len(caption) > 1000:
                 if img_url:
@@ -309,7 +309,7 @@ async def send_initial_document(client, message, user_id, index):
     reply_markup = InlineKeyboardMarkup([buttons])
 
     caption = document.get("caption", "No Caption")
-    caption += "\n\n<b><blockquote>〽️ Powered by @MadxBotz</blockquote></b>"
+    caption += "\n\n<b><blockquote>〽️ Powered by @ADDAFILES</blockquote></b>"
 
     if img_url:
         await message.reply_photo(
@@ -339,7 +339,7 @@ async def show_document(client, message, user_id, index):
     reply_markup = InlineKeyboardMarkup([buttons])
 
     caption = document.get("caption", "No Caption")
-    caption += "\n\n<b><blockquote>〽️ Powered by @MadxBotz</blockquote></b>"
+    caption += "\n\n<b><blockquote>〽️ Powered by @ADDAFILES</blockquote></b>"
 
     if img_url:
         try:
