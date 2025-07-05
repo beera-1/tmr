@@ -1,0 +1,7 @@
+pyrofork
+TgCrypto
+shortzy
+aiohttp
+beautifulsoup4
+motor
+requests
