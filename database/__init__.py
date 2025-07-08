@@ -80,7 +80,7 @@ async def send_new_link_notification(links):
             return
 
         for link in links:
-            local_filename = f"downloads/@MadxBotz {link['name']}.torrent"
+            local_filename = f"downloads/@ADDAFILES {link['name']}.torrent"
 
             if await is_valid_link(link["link"]):
                 if await download_file(link["link"], local_filename):
