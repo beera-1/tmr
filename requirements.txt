@@ -5,3 +5,5 @@ aiohttp
 beautifulsoup4
 motor
 requests
+pytz
+python-dotenv
