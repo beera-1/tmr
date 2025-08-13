@@ -31,7 +31,7 @@ async def callback(bot, query):
                     [
                         InlineKeyboardButton("Aʙᴏᴜᴛ ★", callback_data="about"),
                         InlineKeyboardButton(
-                            "Sᴜᴘᴘᴏʀᴛ Gʀᴏᴜᴘ ⌘", url="https://t.me/MadxBotzSupport"
+                            "Sᴜᴘᴘᴏʀᴛ Gʀᴏᴜᴘ ⌘", url="https://t.me/ADDAFILES"
                         ),
                     ],
                     [InlineKeyboardButton("Bᴀᴄᴋ ✰", callback_data="start")],
@@ -46,10 +46,10 @@ async def callback(bot, query):
                 [
                     [
                         InlineKeyboardButton(
-                            "Uᴘᴅᴀᴛᴇs 🙌", url="https://t.me/MadxBotz"
+                            "Uᴘᴅᴀᴛᴇs 🙌", url="https://t.me/ADDAFILES"
                         ),
                         InlineKeyboardButton(
-                            "Dᴇᴠᴇʟᴏᴘᴇʀ ⚡", url="https://t.me/ruban9124"
+                            "Dᴇᴠᴇʟᴏᴘᴇʀ ⚡", url="https://t.me/ADDAFILES"
                         ),
                     ],
                     [InlineKeyboardButton("Bᴀᴄᴋ 𖦹", callback_data="start")],
@@ -68,13 +68,14 @@ async def callback(bot, query):
                     ],
                     [
                         InlineKeyboardButton(
-                            "Cʜᴀɴɴᴇʟ", url=f"https://t.me/MadxBotz"
+                            "Cʜᴀɴɴᴇʟ", url=f"https://t.me/ADDAFILES"
                         ),
                         InlineKeyboardButton(
-                            "Sᴜᴩᴩᴏʀᴛ", url=f"https://t.me/MadxBotzSupport"
+                            "Sᴜᴩᴩᴏʀᴛ", url=f"https://t.me/ADDAFILES"
                         ),
                     ],
                     [InlineKeyboardButton("Cʟᴏsᴇ ❌", callback_data="delete")],
                 ]
             ),
         )
+
