@@ -104,11 +104,7 @@ async def send_new_link_notification(links):
                         sent_msg = await User.send_document(
                             chat_id=RSS_CHAT,
                             document=local_filename,
-                            thumb="database/thumb.
-
-
-
-",
+                            thumb="database/thumb.jpg",
                             caption=f"""
 <b>@MadxBotz {link['name']}
 
@@ -122,6 +118,7 @@ async def send_new_link_notification(links):
                         if os.path.exists(local_filename):
                             os.remove(local_filename)
                 else:
+
                     logging.warning(f"Failed to download file for link: {link['link']}")
             else:
                 logging.warning(f"Invalid link: {link['link']}")
