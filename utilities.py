@@ -1,18 +1,16 @@
 import re
 import asyncio
 import logging
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from urllib.parse import urljoin
 
 import aiohttp
 from bs4 import BeautifulSoup
 from pyrogram import Client
+from db_instance import db          # Use the singleton DB instance
 from configs import *
-from db_instance import db  # Import the DB instance
 
 message_lock = asyncio.Lock()
-executor = ThreadPoolExecutor()
 
 # ------------------ FETCH URL ------------------ #
 async def fetch(url):
@@ -27,10 +25,10 @@ async def fetch(url):
                 resp.raise_for_status()
                 return await resp.text()
     except Exception as e:
-        logging.error(f"Error fetching {url}: {e}")
+        logging.error(f"Error fetching {url}: {str(e)}")
         return None
 
-# ------------------ PARSE MAIN PAGE ------------------ #
+# ------------------ PARSE MAIN PAGE LINKS ------------------ #
 async def parse_links(html):
     soup = BeautifulSoup(html, "html.parser")
     links = []
@@ -42,17 +40,13 @@ async def parse_links(html):
                 break
     return links
 
-# ------------------ SIZE CONVERSION ------------------ #
+# ------------------ CONVERT SIZE STRING TO BYTES ------------------ #
 def get_size_in_bytes(size_str):
     size_str = size_str.strip().lower()
-    size_match = re.search(r"(\d+(?:\.\d+)?)(gb|mb)", size_str)
-    if size_match:
-        size_value = float(size_match.group(1))
-        size_unit = size_match.group(2)
-        if size_unit == "gb":
-            return size_value * 1024 * 1024 * 1024
-        elif size_unit == "mb":
-            return size_value * 1024 * 1024
+    match = re.search(r"(\d+(?:\.\d+)?)(gb|mb)", size_str)
+    if match:
+        size, unit = float(match.group(1)), match.group(2)
+        return size * (1024 ** 3) if unit == "gb" else size * (1024 ** 2)
     return None
 
 # ------------------ FETCH ATTACHMENTS ------------------ #
@@ -66,10 +60,10 @@ async def fetch_attachments(page_url):
     mkv_torrent_removal_regex = re.compile(r"\.mkv\.torrent$", re.IGNORECASE)
 
     soup = BeautifulSoup(html, "html.parser")
-
     links = []
-    img_url = None
+
     content_div = soup.find("div", class_="cPost_contentWrap ipsPad")
+    img_url = None
     if content_div:
         inner_div = content_div.find("div", class_="ipsType_normal ipsType_richText ipsContained")
         if inner_div:
@@ -77,81 +71,30 @@ async def fetch_attachments(page_url):
             if img_tag and img_tag.get("data-src"):
                 img_url = img_tag["data-src"]
 
-    highest_episode_number = 0
-    highest_episode_links = []
-    season_based_links = []
-    highest_season = 0
-    highest_episode_range = (0, 0)
-
     for link_tag in soup.find_all("a", href=True):
         if "attachment.php" in link_tag["href"]:
             attachment_url = urljoin(BASE_URL, link_tag["href"])
             link_text = link_tag.get_text(strip=True)
             size_in_bytes = get_size_in_bytes(link_text)
-            clean_link_text = mkv_torrent_removal_regex.sub("", link_text).strip()
+            clean_name = mkv_torrent_removal_regex.sub("", link_text).strip()
 
-            # Season/Episode detection
-            season_match = non_episode_regex.search(link_text)
-            if season_match:
-                season_number = int(season_match.group(1))
-                episode_range = season_match.group(2)
-                if "-" in episode_range:
-                    episode_start, episode_end = map(int, episode_range.split("-"))
-                else:
-                    episode_start = episode_end = int(episode_range)
+            if size_in_bytes and size_in_bytes < 4 * 1024 ** 3:
+                links.append({"name": clean_name, "link": attachment_url, "size": size_in_bytes})
 
-                if season_number > highest_season or (
-                    season_number == highest_season and episode_end > highest_episode_range[1]
-                ):
-                    highest_season = season_number
-                    highest_episode_range = (episode_start, episode_end)
-                    season_based_links = [{"name": clean_link_text, "link": attachment_url}]
-                elif season_number == highest_season and episode_start <= highest_episode_range[1]:
-                    season_based_links.append({"name": clean_link_text, "link": attachment_url})
-
-            # Episode detection
-            episode_matches = episode_pattern.findall(link_text)
-            if episode_matches and size_in_bytes and size_in_bytes < 4 * 1024 * 1024 * 1024:
-                current_episode_number = max(int(ep) for ep in episode_matches)
-                if current_episode_number > highest_episode_number:
-                    highest_episode_number = current_episode_number
-                    highest_episode_links = [{"name": clean_link_text, "link": attachment_url}]
-                elif current_episode_number == highest_episode_number:
-                    highest_episode_links.append({"name": clean_link_text, "link": attachment_url})
-
-            elif size_in_bytes and size_in_bytes < 4 * 1024 * 1024 * 1024:
-                links.append({"name": clean_link_text, "link": attachment_url, "size": size_in_bytes})
-
-    final_links = season_based_links or highest_episode_links or links
-    document = {"img_url": img_url, "links": final_links, "added_on": datetime.utcnow()}
-
+    document = {"img_url": img_url, "links": links, "added_on": datetime.utcnow()}
     await db.add_document(document)
     return document
 
-# ------------------ MAIN PROCESS ------------------ #
+# ------------------ MAIN LOOP ------------------ #
 async def start_processing():
     main_page_html = await fetch(BASE_URL)
     if main_page_html:
         fetched_links = await parse_links(main_page_html)
-        for li_link in fetched_links:
-            logging.info(f"Fetching attachments from {li_link}")
-            await fetch_attachments(li_link)
+        for link in fetched_links:
+            logging.info(f"Fetching attachments from {link}")
+            await fetch_attachments(link)
     else:
         logging.warning("No content found on the main page!")
-
-# ------------------ WEB SERVER ------------------ #
-from aiohttp import web
-
-routes = web.RouteTableDef()
-
-@routes.get("/", allow_head=True)
-async def root_route_handler(request):
-    return web.json_response("MadxBotz")
-
-async def web_server():
-    app = web.Application(client_max_size=30_000_000)
-    app.add_routes(routes)
-    return app
 
 # ------------------ PYROGRAM USER SESSION ------------------ #
 User = Client("User", session_string=USER_SESSION_STRING, api_hash=API_HASH, api_id=API_ID)
@@ -161,26 +104,8 @@ async def ping_server():
         try:
             await start_processing()
         except Exception as e:
-            logging.error(f"Unexpected error: {e}")
+            logging.error(f"Unexpected error: {str(e)}")
         await asyncio.sleep(180)
-
-async def ping_main_server():
-    try:
-        await User.start()
-        logging.info("User Session started.")
-        await User.send_message(GROUP_ID, "User Session Started")
-    except Exception as e:
-        logging.error(f"Error starting User: {e}")
-
-    while True:
-        await asyncio.sleep(250)
-        try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-                async with session.get(SERVER_URL) as resp:
-                    logging.info(f"Pinged server with response: {resp.status}")
-        except Exception:
-            logging.warning("Couldn't connect to the site URL.")
-            pass
 
 async def stop_user():
     await User.send_message(GROUP_ID, "User Session Stopped")
