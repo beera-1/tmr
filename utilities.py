@@ -8,8 +8,8 @@ from urllib.parse import urljoin
 import aiohttp
 from bs4 import BeautifulSoup
 from pyrogram import Client
-from db_instance import db  # <- use db_instance to avoid circular import
 from configs import *
+from db_instance import db  # Import the DB instance
 
 message_lock = asyncio.Lock()
 executor = ThreadPoolExecutor()
@@ -27,10 +27,10 @@ async def fetch(url):
                 resp.raise_for_status()
                 return await resp.text()
     except Exception as e:
-        logging.error(f"Error fetching {url}: {str(e)}")
+        logging.error(f"Error fetching {url}: {e}")
         return None
 
-# ------------------ PARSE LINKS ------------------ #
+# ------------------ PARSE MAIN PAGE ------------------ #
 async def parse_links(html):
     soup = BeautifulSoup(html, "html.parser")
     links = []
@@ -42,7 +42,7 @@ async def parse_links(html):
                 break
     return links
 
-# ------------------ SIZE TO BYTES ------------------ #
+# ------------------ SIZE CONVERSION ------------------ #
 def get_size_in_bytes(size_str):
     size_str = size_str.strip().lower()
     size_match = re.search(r"(\d+(?:\.\d+)?)(gb|mb)", size_str)
@@ -68,8 +68,8 @@ async def fetch_attachments(page_url):
     soup = BeautifulSoup(html, "html.parser")
 
     links = []
-    content_div = soup.find("div", class_="cPost_contentWrap ipsPad")
     img_url = None
+    content_div = soup.find("div", class_="cPost_contentWrap ipsPad")
     if content_div:
         inner_div = content_div.find("div", class_="ipsType_normal ipsType_richText ipsContained")
         if inner_div:
@@ -88,7 +88,6 @@ async def fetch_attachments(page_url):
             attachment_url = urljoin(BASE_URL, link_tag["href"])
             link_text = link_tag.get_text(strip=True)
             size_in_bytes = get_size_in_bytes(link_text)
-
             clean_link_text = mkv_torrent_removal_regex.sub("", link_text).strip()
 
             # Season/Episode detection
@@ -129,7 +128,7 @@ async def fetch_attachments(page_url):
     await db.add_document(document)
     return document
 
-# ------------------ MAIN LOOP ------------------ #
+# ------------------ MAIN PROCESS ------------------ #
 async def start_processing():
     main_page_html = await fetch(BASE_URL)
     if main_page_html:
@@ -150,9 +149,9 @@ async def root_route_handler(request):
     return web.json_response("MadxBotz")
 
 async def web_server():
-    web_app = web.Application(client_max_size=30_000_000)
-    web_app.add_routes(routes)
-    return web_app
+    app = web.Application(client_max_size=30_000_000)
+    app.add_routes(routes)
+    return app
 
 # ------------------ PYROGRAM USER SESSION ------------------ #
 User = Client("User", session_string=USER_SESSION_STRING, api_hash=API_HASH, api_id=API_ID)
@@ -162,7 +161,7 @@ async def ping_server():
         try:
             await start_processing()
         except Exception as e:
-            logging.error(f"Unexpected error: {str(e)}")
+            logging.error(f"Unexpected error: {e}")
         await asyncio.sleep(180)
 
 async def ping_main_server():
@@ -171,7 +170,7 @@ async def ping_main_server():
         logging.info("User Session started.")
         await User.send_message(GROUP_ID, "User Session Started")
     except Exception as e:
-        logging.error(f"Error Starting User: {str(e)}")
+        logging.error(f"Error starting User: {e}")
 
     while True:
         await asyncio.sleep(250)
