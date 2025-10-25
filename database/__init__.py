@@ -5,10 +5,15 @@ import logging
 from pyrogram import Client
 from configs import *
 from db_instance import db
+from urllib.parse import urljoin
+from datetime import datetime
+import aiohttp
 
 os.makedirs("downloads", exist_ok=True)
 
-User = Client("User", session_string=USER_SESSION_STRING, api_hash=API_HASH, api_id=API_ID)
+User = Client(
+    "User", session_string=USER_SESSION_STRING, api_hash=API_HASH, api_id=API_ID
+)
 
 # ------------------ DOWNLOAD FILE ------------------ #
 async def download_file(url, local_filename):
@@ -42,12 +47,13 @@ async def send_new_link_notification(links):
             return
 
         for link in links:
+            # Sanitize filename
             safe_name = re.sub(r"[^\w\d-_. ]", "_", link['name'])
             local_filename = f"downloads/{safe_name}.torrent"
 
             full_url = link["link"]
             if not full_url.startswith("http"):
-                full_url = BASE_URL.rstrip("/") + link["link"]
+                full_url = urljoin(BASE_URL.rstrip("/"), link["link"])
 
             if await download_file(full_url, local_filename):
                 try:
