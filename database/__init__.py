@@ -2,22 +2,13 @@ import os
 import re
 import asyncio
 import logging
-from datetime import datetime
-from urllib.parse import urlparse
-
-import aiohttp
 from pyrogram import Client
 from configs import *
-from database import Database
+from db_instance import db
 
 os.makedirs("downloads", exist_ok=True)
 
-User = Client(
-    "User", session_string=USER_SESSION_STRING, api_hash=API_HASH, api_id=API_ID
-)
-
-db = Database(DATABASE_URL, "MadxBotz_Scrapper")
-
+User = Client("User", session_string=USER_SESSION_STRING, api_hash=API_HASH, api_id=API_ID)
 
 # ------------------ DOWNLOAD FILE ------------------ #
 async def download_file(url, local_filename):
@@ -43,7 +34,6 @@ async def download_file(url, local_filename):
             await asyncio.sleep(1)
     return False
 
-
 # ------------------ SEND DOCUMENTS ------------------ #
 async def send_new_link_notification(links):
     async with User:
@@ -52,7 +42,6 @@ async def send_new_link_notification(links):
             return
 
         for link in links:
-            # Sanitize file name
             safe_name = re.sub(r"[^\w\d-_. ]", "_", link['name'])
             local_filename = f"downloads/{safe_name}.torrent"
 
