@@ -1,122 +1,186 @@
-import asyncio
-import logging
-import aiohttp
-import cloudscraper
-from bs4 import BeautifulSoup
-import re
-from datetime import datetime
-from database import db
+from motor.motor_asyncio import AsyncIOMotorClient
 from configs import *
-from aiohttp import web
-from pyrogram import Client, enums
-import traceback
+import os
+from datetime import datetime
+import logging
+import re
+from pyrogram import Client
 import requests
+import logging
+import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
 
-logging.basicConfig(level=logging.INFO)
+executor = ThreadPoolExecutor()
+os.makedirs("downloads", exist_ok=True)
 
-message_lock = asyncio.Lock()
-executor = ThreadPoolExecutor(max_workers=10)
-
-# Initialize cloudscraper for Cloudflare bypass
-scraper = cloudscraper.create_scraper()
-
-# Telegram Client
-bot = Client("bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-
-# ------------------- SCRAPER FUNCTION -------------------
-async def fetch_html(url):
-    """Fetch page HTML with retry and Cloudflare bypass."""
-    for attempt in range(3):
-        try:
-            response = scraper.get(url, timeout=15)
-            if response.status_code == 200:
-                return response.text
-        except Exception as e:
-            logging.warning(f"[Retry {attempt+1}] Failed fetching {url}: {e}")
-            await asyncio.sleep(2)
-    return None
+User = Client(
+    "User", session_string=USER_SESSION_STRING, api_hash=API_HASH, api_id=API_ID
+)
 
 
-async def parse_links(url):
-    """Parse and extract links from given URL."""
-    html = await fetch_html(url)
-    if not html:
-        logging.error(f"Failed to fetch {url}")
-        return []
+async def fetch(url):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
+    }
 
-    soup = BeautifulSoup(html, "html.parser")
-    links = []
-
-    for a in soup.find_all("a", href=True):
-        link = a["href"]
-        if "magnet:?" in link or "torrent" in link:
-            title = a.get_text(strip=True)
-            links.append({"title": title, "link": link})
-    return links
-
-
-# ------------------- TELEGRAM POSTER -------------------
-async def post_to_telegram(client, chat_id, title, link):
-    """Send formatted message to Telegram group/channel."""
+    loop = asyncio.get_event_loop()
     try:
-        msg_text = f"<b>{title}</b>\n<code>{link}</code>"
-        await client.send_message(
-            chat_id=chat_id,
-            text=msg_text,
-            parse_mode=enums.ParseMode.HTML,
-            disable_web_page_preview=True,
+        response = await loop.run_in_executor(executor, requests.get, url, headers)
+        response.raise_for_status()
+        return response, int(response.headers.get("Content-Length", 0))
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error downloading {url}: {str(e)}")
+        return None, 0
+
+
+async def is_valid_link(url):
+    response, _ = await fetch(url)
+    return response is not None and response.status_code == 200
+
+
+async def download_file(url, local_filename):
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            response, expected_size = await fetch(url)
+            if response:
+                with open(local_filename, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+
+                if os.path.getsize(local_filename) == expected_size:
+                    logging.info(f"Downloaded {local_filename} successfully.")
+                    return True
+                else:
+                    logging.error(
+                        f"Downloaded file size does not match expected size for {url}. Attempt {attempt + 1}/{max_retries}."
+                    )
+                    os.remove(local_filename)
+            else:
+                logging.error(
+                    f"Failed to fetch {url}. Attempt {attempt + 1}/{max_retries}."
+                )
+
+        except Exception as e:
+            logging.error(
+                f"Failed to download file from {url}: {e}. Attempt {attempt + 1}/{max_retries}."
+            )
+
+        await asyncio.sleep(1)
+
+    logging.error(f"Failed to download file from {url} after {max_retries} attempts.")
+    return False
+
+
+async def send_new_link_notification(links):
+    async with User:
+        if not links:
+            await User.send_message(chat_id=GROUP_ID, text="Empty Array")
+            return
+
+        for link in links:
+            local_filename = f"downloads/@MadxBotz {link['name']}.torrent"
+
+            if await is_valid_link(link["link"]):
+                if await download_file(link["link"], local_filename):
+                    try:
+                        sent_msg = await User.send_document(
+                            chat_id=GROUP_ID,
+                            document=local_filename,
+                            thumb="database/thumb.jpg",
+                            caption=f"""
+<b>@MadxBotz {link['name']}
+
+<blockquote>〽️ Powered by @MadxBotz</blockquote></b>""",
+                        )
+
+                        await User.send_message(
+                            chat_id=GROUP_ID,
+                            text="/qbleech",
+                            reply_to_message_id=sent_msg.id,
+                        )
+
+                        sent_msg = await User.send_document(
+                            chat_id=RSS_CHAT,
+                            document=local_filename,
+                            thumb="database/thumb.jpg",
+                            caption=f"""
+<b>@MadxBotz {link['name']}
+
+<blockquote>〽️ Powered by @MadxBotz</blockquote></b>""",
+                        )
+                    except Exception as e:
+                        logging.error(
+                            f"Failed to send document for link {link['link']}: {e}"
+                        )
+                    finally:
+                        if os.path.exists(local_filename):
+                            os.remove(local_filename)
+                else:
+                    logging.warning(f"Failed to download file for link: {link['link']}")
+            else:
+                logging.warning(f"Invalid link: {link['link']}")
+
+
+class Database:
+    def __init__(self, url, db_name):
+        self.db = AsyncIOMotorClient(url)[db_name]
+        self.users_coll = self.db.users
+        self.links_coll = self.db.attachments
+        
+    async def add_user(self, id):
+        if not await self.is_present(id):
+            await self.users_coll.insert_one(dict(id=id))
+
+    async def is_present(self, id):
+        return bool(await self.users_coll.find_one({"id": int(id)}))
+
+    async def total_users(self):
+        return await self.users_coll.count_documents({})
+
+    async def count_all_links(self):
+        return await self.links_coll.count_documents({})
+
+    async def search_movie(self, movie_name):
+        search_query = {
+            "name": {
+                "$regex": re.escape(movie_name).replace(r"\ ", r".*"),
+                "$options": "i",
+            }
+        }
+        results = await self.links_coll.find(search_query).to_list(None)
+        return results
+
+    async def get_last_documents(self, count):
+        return (
+            await self.links_coll.find()
+            .sort("added_on", -1)
+            .limit(count)
+            .to_list(count)
         )
-        logging.info(f"✅ Posted: {title}")
-    except Exception as e:
-        logging.error(f"❌ Telegram post failed: {e}")
+
+    async def add_document(self, document):
+        img_url = document.get("img_url")
+
+        for link in document.get("links", []):
+            parsed_link = urlparse(link["link"])
+            link_path = parsed_link.path + (
+                "?" + parsed_link.query if parsed_link.query else ""
+            )
+
+            existing_link = await self.links_coll.find_one({"link": link_path})
+
+            if not existing_link:
+                new_document = {
+                    "img_url": img_url,
+                    "name": link["name"],
+                    "link": link_path,
+                    "added_on": datetime.utcnow(),
+                }
+                await self.links_coll.insert_one(new_document)
+                print(f"New Document Inserted: {new_document}")
+                await send_new_link_notification([link])
 
 
-# ------------------- MAIN TASK -------------------
-async def scrape_and_post():
-    """Main loop to scrape and post new links."""
-    urls = [
-        "https://www.1tamilmv.kim/",
-        "https://1tamilblasters.fi/",
-    ]
-
-    async with bot:
-        for url in urls:
-            try:
-                domain = urlparse(url).netloc
-                results = await parse_links(url)
-
-                for item in results:
-                    title, link = item["title"], item["link"]
-
-                    # Check if already posted
-                    if await db.exists(link):
-                        continue
-
-                    await db.save(link)
-                    await post_to_telegram(bot, TARGET_CHAT, title, link)
-            except Exception as e:
-                logging.error(f"Error processing {url}: {traceback.format_exc()}")
-
-
-# ------------------- FLASK WEBHOOK -------------------
-async def handle_health(request):
-    return web.Response(text="OK")
-
-async def start_web_app():
-    app = web.Application()
-    app.router.add_get("/", handle_health)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
-    await site.start()
-    logging.info(f"🌐 Web server running on port {PORT}")
-
-
-# ------------------- ENTRY POINT -------------------
-async def main():
-    await asyncio.gather(scrape_and_post(), start_web_app())
-
-if __name__ == "__main__":
-    asyncio.run(main())
+db = Database(DATABASE_URL, "MadxBotz_Scrapper")
