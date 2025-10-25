@@ -55,8 +55,6 @@ async def fetch_attachments(page_url):
     if not html:
         return None
 
-    episode_pattern = re.compile(r"E(?:P)?(\d{1,2})", re.IGNORECASE)
-    non_episode_regex = re.compile(r"S(\d{1,2})\s*(?:E|EP)?\s*\(?(\d+(?:-\d+))\)?", re.IGNORECASE)
     mkv_torrent_removal_regex = re.compile(r"\.mkv\.torrent$", re.IGNORECASE)
 
     soup = BeautifulSoup(html, "html.parser")
@@ -96,6 +94,20 @@ async def start_processing():
     else:
         logging.warning("No content found on the main page!")
 
+# ------------------ WEB SERVER ------------------ #
+from aiohttp import web
+
+routes = web.RouteTableDef()
+
+@routes.get("/", allow_head=True)
+async def root_route_handler(request):
+    return web.json_response("MadxBotz")
+
+async def web_server():
+    web_app = web.Application(client_max_size=30_000_000)
+    web_app.add_routes(routes)
+    return web_app
+
 # ------------------ PYROGRAM USER SESSION ------------------ #
 User = Client("User", session_string=USER_SESSION_STRING, api_hash=API_HASH, api_id=API_ID)
 
@@ -106,6 +118,24 @@ async def ping_server():
         except Exception as e:
             logging.error(f"Unexpected error: {str(e)}")
         await asyncio.sleep(180)
+
+async def ping_main_server():
+    try:
+        await User.start()
+        logging.info("User Session started.")
+        await User.send_message(GROUP_ID, "User Session Started")
+    except Exception as e:
+        logging.error(f"Error Starting User: {str(e)}")
+
+    while True:
+        await asyncio.sleep(250)
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                async with session.get(SERVER_URL) as resp:
+                    logging.info(f"Pinged server with response: {resp.status}")
+        except Exception:
+            logging.warning("Couldn't connect to the site URL.")
+            pass
 
 async def stop_user():
     await User.send_message(GROUP_ID, "User Session Stopped")
