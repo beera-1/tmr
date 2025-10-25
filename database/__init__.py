@@ -1,47 +1,44 @@
+from motor.motor_asyncio import AsyncIOMotorClient
+from configs import *
 import os
+from datetime import datetime
+import logging
 import re
+from pyrogram import Client
+import requests
 import logging
 import asyncio
-from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlparse
-
-import requests
-from pyrogram import Client
-
-from configs import *
 
 executor = ThreadPoolExecutor()
 os.makedirs("downloads", exist_ok=True)
 
-# ------------------ USER CLIENT ------------------
 User = Client(
     "User", session_string=USER_SESSION_STRING, api_hash=API_HASH, api_id=API_ID
 )
 
-# ------------------ FETCH URL ------------------
+
 async def fetch(url):
     headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
-        )
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
     }
+
     loop = asyncio.get_event_loop()
     try:
-        response = await loop.run_in_executor(executor, requests.get, url, headers, True)
+        response = await loop.run_in_executor(executor, requests.get, url, headers)
         response.raise_for_status()
         return response, int(response.headers.get("Content-Length", 0))
     except requests.exceptions.RequestException as e:
         logging.error(f"Error downloading {url}: {str(e)}")
         return None, 0
 
-# ------------------ VALID LINK CHECK ------------------
+
 async def is_valid_link(url):
     response, _ = await fetch(url)
     return response is not None and response.status_code == 200
 
-# ------------------ FILE DOWNLOAD ------------------
+
 async def download_file(url, local_filename):
     max_retries = 5
     for attempt in range(max_retries):
@@ -61,7 +58,10 @@ async def download_file(url, local_filename):
                     )
                     os.remove(local_filename)
             else:
-                logging.error(f"Failed to fetch {url}. Attempt {attempt + 1}/{max_retries}.")
+                logging.error(
+                    f"Failed to fetch {url}. Attempt {attempt + 1}/{max_retries}."
+                )
+
         except Exception as e:
             logging.error(
                 f"Failed to download file from {url}: {e}. Attempt {attempt + 1}/{max_retries}."
@@ -72,7 +72,7 @@ async def download_file(url, local_filename):
     logging.error(f"Failed to download file from {url} after {max_retries} attempts.")
     return False
 
-# ------------------ SEND NEW LINK ------------------
+
 async def send_new_link_notification(links):
     async with User:
         if not links:
@@ -80,7 +80,7 @@ async def send_new_link_notification(links):
             return
 
         for link in links:
-            local_filename = f"downloads/@ADDAFILES {link['name']}.torrent"
+            local_filename = f"downloads/@MadxBotz {link['name']}.torrent"
 
             if await is_valid_link(link["link"]):
                 if await download_file(link["link"], local_filename):
@@ -88,27 +88,36 @@ async def send_new_link_notification(links):
                         sent_msg = await User.send_document(
                             chat_id=GROUP_ID,
                             document=local_filename,
-                            thumb=link.get("img_url", "database/thumb.jpg"),
-                            caption=f"""<b>@ADDAFILES {link['name']}
+                            thumb="database/thumb.jpg",
+                            caption=f"""
+<b>@MadxBotz {link['name']}
 
-<blockquote>〽️ Powered by @ADDAFILES</blockquote></b>""",
+<blockquote>〽️ Powered by @MadxBotz</blockquote></b>""",
                         )
+
                         await User.send_message(
                             chat_id=GROUP_ID,
                             text="/qbleech",
                             reply_to_message_id=sent_msg.id,
                         )
 
-                        await User.send_document(
+                        sent_msg = await User.send_document(
                             chat_id=RSS_CHAT,
                             document=local_filename,
-                            thumb=link.get("img_url", "database/thumb.jpg"),
-                            caption=f"""<b>@ADDAFILES {link['name']}
+                            thumb="database/thumb.
 
-<blockquote>〽️ Powered by @ADDAFILES</blockquote></b>""",
+
+
+",
+                            caption=f"""
+<b>@MadxBotz {link['name']}
+
+<blockquote>〽️ Powered by @MadxBotz</blockquote></b>""",
                         )
                     except Exception as e:
-                        logging.error(f"Failed to send document for link {link['link']}: {e}")
+                        logging.error(
+                            f"Failed to send document for link {link['link']}: {e}"
+                        )
                     finally:
                         if os.path.exists(local_filename):
                             os.remove(local_filename)
@@ -117,15 +126,13 @@ async def send_new_link_notification(links):
             else:
                 logging.warning(f"Invalid link: {link['link']}")
 
-# ------------------ DATABASE CLASS ------------------
-from motor.motor_asyncio import AsyncIOMotorClient
 
 class Database:
     def __init__(self, url, db_name):
         self.db = AsyncIOMotorClient(url)[db_name]
         self.users_coll = self.db.users
         self.links_coll = self.db.attachments
-
+        
     async def add_user(self, id):
         if not await self.is_present(id):
             await self.users_coll.insert_one(dict(id=id))
@@ -177,7 +184,7 @@ class Database:
                 }
                 await self.links_coll.insert_one(new_document)
                 print(f"New Document Inserted: {new_document}")
-                await send_new_link_notification([{"name": link["name"], "link": link_path, "img_url": img_url}])
+                await send_new_link_notification([link])
 
-# ------------------ INITIALIZE DB ------------------
+
 db = Database(DATABASE_URL, "MadxBotz_Scrapper")
