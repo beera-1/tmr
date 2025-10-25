@@ -7,3 +7,4 @@ motor
 requests
 pytz
 python-dotenv
+cloudscraper
