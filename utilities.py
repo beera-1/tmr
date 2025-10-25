@@ -8,13 +8,13 @@ from urllib.parse import urljoin
 import aiohttp
 from bs4 import BeautifulSoup
 from pyrogram import Client
-from database import db
+from db_instance import db  # <- use db_instance to avoid circular import
 from configs import *
 
 message_lock = asyncio.Lock()
 executor = ThreadPoolExecutor()
 
-# ------------------ FETCH URL WITH HEADERS ------------------ #
+# ------------------ FETCH URL ------------------ #
 async def fetch(url):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -30,8 +30,7 @@ async def fetch(url):
         logging.error(f"Error fetching {url}: {str(e)}")
         return None
 
-
-# ------------------ PARSE MAIN PAGE LINKS ------------------ #
+# ------------------ PARSE LINKS ------------------ #
 async def parse_links(html):
     soup = BeautifulSoup(html, "html.parser")
     links = []
@@ -43,8 +42,7 @@ async def parse_links(html):
                 break
     return links
 
-
-# ------------------ CONVERT SIZE STRING TO BYTES ------------------ #
+# ------------------ SIZE TO BYTES ------------------ #
 def get_size_in_bytes(size_str):
     size_str = size_str.strip().lower()
     size_match = re.search(r"(\d+(?:\.\d+)?)(gb|mb)", size_str)
@@ -57,8 +55,7 @@ def get_size_in_bytes(size_str):
             return size_value * 1024 * 1024
     return None
 
-
-# ------------------ FETCH ATTACHMENTS FROM TOPIC ------------------ #
+# ------------------ FETCH ATTACHMENTS ------------------ #
 async def fetch_attachments(page_url):
     html = await fetch(page_url)
     if not html:
@@ -88,7 +85,7 @@ async def fetch_attachments(page_url):
 
     for link_tag in soup.find_all("a", href=True):
         if "attachment.php" in link_tag["href"]:
-            attachment_url = urljoin(BASE_URL, link_tag["href"])  # store full URL
+            attachment_url = urljoin(BASE_URL, link_tag["href"])
             link_text = link_tag.get_text(strip=True)
             size_in_bytes = get_size_in_bytes(link_text)
 
@@ -132,8 +129,7 @@ async def fetch_attachments(page_url):
     await db.add_document(document)
     return document
 
-
-# ------------------ MAIN PROCESSING LOOP ------------------ #
+# ------------------ MAIN LOOP ------------------ #
 async def start_processing():
     main_page_html = await fetch(BASE_URL)
     if main_page_html:
@@ -143,7 +139,6 @@ async def start_processing():
             await fetch_attachments(li_link)
     else:
         logging.warning("No content found on the main page!")
-
 
 # ------------------ WEB SERVER ------------------ #
 from aiohttp import web
@@ -158,7 +153,6 @@ async def web_server():
     web_app = web.Application(client_max_size=30_000_000)
     web_app.add_routes(routes)
     return web_app
-
 
 # ------------------ PYROGRAM USER SESSION ------------------ #
 User = Client("User", session_string=USER_SESSION_STRING, api_hash=API_HASH, api_id=API_ID)
@@ -188,7 +182,6 @@ async def ping_main_server():
         except Exception:
             logging.warning("Couldn't connect to the site URL.")
             pass
-
 
 async def stop_user():
     await User.send_message(GROUP_ID, "User Session Stopped")
