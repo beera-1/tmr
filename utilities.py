@@ -1,12 +1,11 @@
-import re 
+import re
 import asyncio
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from urllib.parse import urlparse
+from urllib.parse import urljoin
 
 import aiohttp
-import requests
 from bs4 import BeautifulSoup
 from pyrogram import Client
 from database import db
@@ -15,7 +14,6 @@ from configs import *
 message_lock = asyncio.Lock()
 executor = ThreadPoolExecutor()
 
-
 # ------------------ FETCH URL WITH HEADERS ------------------ #
 async def fetch(url):
     headers = {
@@ -23,14 +21,12 @@ async def fetch(url):
                       "AppleWebKit/537.36 (KHTML, like Gecko) "
                       "Chrome/113.0.0.0 Safari/537.36"
     }
-
-    loop = asyncio.get_event_loop()
     try:
-        # Correctly pass headers using lambda
-        response = await loop.run_in_executor(executor, lambda: requests.get(url, headers=headers))
-        response.raise_for_status()
-        return response.text
-    except requests.exceptions.RequestException as e:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers) as resp:
+                resp.raise_for_status()
+                return await resp.text()
+    except Exception as e:
         logging.error(f"Error fetching {url}: {str(e)}")
         return None
 
@@ -70,8 +66,7 @@ async def fetch_attachments(page_url):
 
     episode_pattern = re.compile(r"E(?:P)?(\d{1,2})", re.IGNORECASE)
     non_episode_regex = re.compile(r"S(\d{1,2})\s*(?:E|EP)?\s*\(?(\d+(?:-\d+))\)?", re.IGNORECASE)
-    domain_removal_regex = re.compile(r"\b(www\.[^\s/$.?#].[^\s]*)\b")
-    mkv_torrent_removal_regex = re.compile(r"\.mkv\.torrent$")
+    mkv_torrent_removal_regex = re.compile(r"\.mkv\.torrent$", re.IGNORECASE)
 
     soup = BeautifulSoup(html, "html.parser")
 
@@ -91,14 +86,13 @@ async def fetch_attachments(page_url):
     highest_season = 0
     highest_episode_range = (0, 0)
 
-    for link in soup.find_all("a", href=True):
-        if "attachment.php" in link["href"]:
-            attachment_url = link["href"]
-            link_text = link.get_text(strip=True)
+    for link_tag in soup.find_all("a", href=True):
+        if "attachment.php" in link_tag["href"]:
+            attachment_url = urljoin(BASE_URL, link_tag["href"])  # store full URL
+            link_text = link_tag.get_text(strip=True)
             size_in_bytes = get_size_in_bytes(link_text)
 
-            clean_link_text = domain_removal_regex.sub("", link_text)
-            clean_link_text = mkv_torrent_removal_regex.sub("", clean_link_text).strip()
+            clean_link_text = mkv_torrent_removal_regex.sub("", link_text).strip()
 
             # Season/Episode detection
             season_match = non_episode_regex.search(link_text)
@@ -200,4 +194,3 @@ async def stop_user():
     await User.send_message(GROUP_ID, "User Session Stopped")
     await User.stop()
     logging.info("User Session Stopped.")
-
