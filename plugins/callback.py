@@ -2,7 +2,6 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from configs import *
 from plugins.commands import user_pagination, show_document
-from db_instance import db
 
 @Client.on_callback_query()
 async def callback(bot, query):
@@ -79,5 +78,6 @@ async def callback(bot, query):
                 ]
             ),
         )
+
 
 
