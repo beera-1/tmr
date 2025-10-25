@@ -1,6 +1,6 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from db_instance import db
+
 from configs import *
 from pyrogram import Client, filters, __version__, enums
 from pyrogram.types import InputMediaPhoto
@@ -399,4 +399,5 @@ def split_caption(document):
     )
 
     return caption_parts
+
 
