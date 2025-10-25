@@ -16,13 +16,15 @@ from pyrogram import filters
 from pyrogram.enums import ChatMemberStatus
 
 message_lock = asyncio.Lock()
-
 executor = ThreadPoolExecutor()
 
-
+# --------------------------- FETCH HTML ---------------------------
 async def fetch(url):
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
+        )
     }
 
     loop = asyncio.get_event_loop()
@@ -35,6 +37,7 @@ async def fetch(url):
         return None
 
 
+# --------------------------- PARSE TOPIC LINKS ---------------------------
 async def parse_links(html):
     soup = BeautifulSoup(html, "html.parser")
 
@@ -48,6 +51,7 @@ async def parse_links(html):
     return links
 
 
+# --------------------------- SIZE CONVERTER ---------------------------
 def get_size_in_bytes(size_str):
     size_str = size_str.strip().lower()
     size_match = re.search(r"(\d+(?:\.\d+)?)(gb|mb)", size_str, re.IGNORECASE)
@@ -55,12 +59,13 @@ def get_size_in_bytes(size_str):
         size_value = float(size_match.group(1))
         size_unit = size_match.group(2).lower()
         if size_unit == "gb":
-            return size_value * 1024 * 1024 * 1024  # Convert GB to bytes
+            return size_value * 1024 * 1024 * 1024  # GB to bytes
         elif size_unit == "mb":
-            return size_value * 1024 * 1024  # Convert MB to bytes
+            return size_value * 1024 * 1024  # MB to bytes
     return None
 
 
+# --------------------------- FETCH ATTACHMENTS ---------------------------
 async def fetch_attachments(page_url):
     html = await fetch(page_url)
     if not html:
@@ -76,22 +81,33 @@ async def fetch_attachments(page_url):
 
     soup = BeautifulSoup(html, "html.parser")
 
-    links = []
-    content_div = soup.find("div", class_="cPost_contentWrap ipsPad")
+    # --------------------------- IMAGE EXTRACTION FIXED ---------------------------
     img_url = None
+    content_div = soup.find("div", class_="cPost_contentWrap ipsPad")
     if content_div:
-        inner_div = content_div.find(
-            "div", class_="ipsType_normal ipsType_richText ipsContained"
-        )
+        img_tag = content_div.find("img")
+        if img_tag:
+            img_url = img_tag.get("data-src") or img_tag.get("src")
+
+    # Fallback: try any image in the post body
+    if not img_url:
+        inner_div = soup.find("div", class_="ipsType_richText ipsContained")
         if inner_div:
             img_tag = inner_div.find("img")
-            if img_tag and img_tag.get("data-src"):
-                img_url = img_tag["data-src"]
+            if img_tag:
+                img_url = img_tag.get("data-src") or img_tag.get("src")
 
+    # Last resort: global fallback
+    if not img_url:
+        img_tag = soup.find("img")
+        if img_tag:
+            img_url = img_tag.get("data-src") or img_tag.get("src")
+
+    # --------------------------- LINK EXTRACTION ---------------------------
+    links = []
     highest_episode_number = 0
     highest_episode_links = []
     season_based_links = []
-
     highest_season = 0
     highest_episode_range = (0, 0)
 
@@ -102,7 +118,6 @@ async def fetch_attachments(page_url):
             link_text = link.get_text(strip=True)
             size_in_bytes = get_size_in_bytes(link_text)
 
-            link_text = link.get_text(strip=True)
             clean_link_text = domain_removal_regex.sub("", link_text)
             clean_link_text = mkv_torrent_removal_regex.sub("", clean_link_text).strip()
 
@@ -133,11 +148,11 @@ async def fetch_attachments(page_url):
                         {"name": clean_link_text, "link": attachment_url}
                     )
 
-            # Check for episodes in the link text
+            # Episode pattern detection
             episode_matches = episode_pattern.findall(link_text)
             if episode_matches and size_in_bytes is not None:
                 current_episode_number = max(int(ep) for ep in episode_matches)
-                if size_in_bytes < 4 * 1024 * 1024 * 1024:  # Filter by size < 4GB
+                if size_in_bytes < 4 * 1024 * 1024 * 1024:
                     if current_episode_number > highest_episode_number:
                         highest_episode_number = current_episode_number
                         highest_episode_links = [
@@ -173,27 +188,24 @@ async def fetch_attachments(page_url):
     return document
 
 
+# --------------------------- MAIN SCRAPER ---------------------------
 async def start_processing():
     main_page_html = await fetch(BASE_URL)
-
     if main_page_html:
         fetched_links = await parse_links(main_page_html)
-
         for li_link in fetched_links:
             logging.info(f"Fetching attachments from {li_link}")
             await fetch_attachments(li_link)
-
     else:
         logging.warning("No content found on the main page!")
 
 
+# --------------------------- WEB SERVER ---------------------------
 routes = web.RouteTableDef()
-
 
 @routes.get("/", allow_head=True)
 async def root_route_handler(request):
     return web.json_response("MadxBotz")
-
 
 async def web_server():
     web_app = web.Application(client_max_size=30000000)
@@ -201,11 +213,13 @@ async def web_server():
     return web_app
 
 
+# --------------------------- USER CLIENT ---------------------------
 User = Client(
     "User", session_string=USER_SESSION_STRING, api_hash=API_HASH, api_id=API_ID
 )
 
 
+# --------------------------- PING SERVER TASKS ---------------------------
 async def ping_server():
     while True:
         try:
@@ -226,11 +240,9 @@ async def ping_main_server():
     while True:
         await asyncio.sleep(250)
         try:
-            async with aiohttp.ClientSession(
-                timeout=aiohttp.ClientTimeout(total=10)
-            ) as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
                 async with session.get(SERVER_URL) as resp:
-                    logging.info("Pinged server with response: {}".format(resp.status))
+                    logging.info(f"Pinged server with response: {resp.status}")
         except TimeoutError:
             logging.warning("Couldn't connect to the site URL.")
         except Exception:
