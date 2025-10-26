@@ -1,5 +1,5 @@
 import asyncio, logging, aiohttp
-import cloudscraper  # Import CloudScraper
+import cloudscraper
 from bs4 import BeautifulSoup
 import re
 from datetime import datetime
@@ -15,19 +15,22 @@ from urllib.parse import urlparse
 message_lock = asyncio.Lock()
 executor = ThreadPoolExecutor()
 
+# --- Fixed fetch() with better Cloudflare handling + retries ---
 async def fetch(url):
-    scraper = cloudscraper.create_scraper()  # Create a scraper instance to bypass Cloudflare protection
+    scraper = cloudscraper.create_scraper()
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36"
     }
     loop = asyncio.get_event_loop()
-    try:
-        response = await loop.run_in_executor(executor, lambda: scraper.get(url, headers=headers))
-        response.raise_for_status()
-        return response.text
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching {url}: {str(e)}")
-        return None
+    for attempt in range(3):
+        try:
+            response = await loop.run_in_executor(executor, lambda: scraper.get(url, headers=headers, timeout=30))
+            response.raise_for_status()
+            return response.text
+        except requests.exceptions.RequestException as e:
+            logging.error(f"[fetch] Error fetching {url} (attempt {attempt+1}/3): {str(e)}")
+            await asyncio.sleep(2)
+    return None
 
 def get_size_in_bytes(size_str):
     size_str = size_str.lower()
@@ -116,7 +119,6 @@ async def fetch_attachments(page_url):
                         highest_episode_links = [{"name": clean_link_text, "link": link["href"]}]
                     elif current_episode_number == highest_episode_number:
                         highest_episode_links.append({"name": clean_link_text, "link": link["href"]})
-
             elif size_in_bytes is not None and size_in_bytes < 4 * 1024 * 1024 * 1024:
                 links.append({"name": clean_link_text, "link": link["href"]})
 
