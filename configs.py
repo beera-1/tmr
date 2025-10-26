@@ -31,7 +31,7 @@ RSS_CHAT = int(
 )  # add the channel id where the torrent files need to be sent
 
 BASE_URL = genv(
-    "BASE_URL", "https://www.1tamilblasters.net"
+    "BASE_URL", "https://www.1tamilrockers.org"
 ).lower()  # update the main domain if changed
 
 
@@ -66,3 +66,4 @@ ABOUT_TXT = """<b>╔════❰ Madx Scrapper Bot ❱═══❍
 WEEK_RELEASES_PATH = genv(
     "RELEASES_PATH", "/index.php?/forums/topic/"
 )  # dont change this
+
