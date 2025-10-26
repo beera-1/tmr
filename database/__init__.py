@@ -12,17 +12,27 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 from configs import *
 
+# Ensure downloads folder exists
 os.makedirs("downloads", exist_ok=True)
 logging.basicConfig(level=logging.INFO)
 
+# Cloudflare bypass scraper
 scraper = cloudscraper.create_scraper(delay=10, browser="chrome")
 
+# Telegram user client
 User = Client("User", session_string=USER_SESSION_STRING, api_id=API_ID, api_hash=API_HASH)
+
+# Optional: Add your 1TamilBlasters login cookies here for attachment.php downloads
+TAMILBLASTERS_COOKIES = {
+    # "ips4_IPSSessionId": "YOUR_SESSION_ID",
+    # "ips4_IPSMemberId": "YOUR_MEMBER_ID",
+    # "ips4_IPSMemberPass": "YOUR_MEMBER_PASS",
+}
 
 async def fetch(url):
     loop = asyncio.get_event_loop()
     try:
-        response = await loop.run_in_executor(None, lambda: scraper.get(url, timeout=20))
+        response = await loop.run_in_executor(None, lambda: scraper.get(url, cookies=TAMILBLASTERS_COOKIES, timeout=20))
         response.raise_for_status()
         size = int(response.headers.get("Content-Length", 0))
         return response, size
@@ -46,7 +56,7 @@ async def download_file(url, local_filename):
     for attempt in range(max_retries):
         try:
             def do_request():
-                with scraper.get(url, headers=headers, stream=True, timeout=60) as response:
+                with scraper.get(url, headers=headers, cookies=TAMILBLASTERS_COOKIES, stream=True, timeout=60) as response:
                     response.raise_for_status()
                     total = int(response.headers.get("Content-Length", 0))
                     size = 0
@@ -80,6 +90,7 @@ async def download_file(url, local_filename):
     logging.error(f"❌ Failed to download {url} after {max_retries} attempts.")
     return False
 
+# ✅ Updated to force .torrent for every file
 async def send_new_link_notification(links):
     async with User:
         if not links:
@@ -87,11 +98,18 @@ async def send_new_link_notification(links):
             return
 
         for link in links:
+            # Force .torrent extension
             local_filename = f"downloads/@MOVIES_ADDDDA {link['name']}.torrent"
 
-            if await is_valid_link(link["link"]):
-                if await download_file(link["link"], local_filename):
+            # Ensure URL starts with http/https
+            file_url = link["link"]
+            if not file_url.startswith(("http://", "https://")):
+                file_url = "https://" + file_url.lstrip("/")
+
+            if await is_valid_link(file_url):
+                if await download_file(file_url, local_filename):
                     try:
+                        # Send to main group
                         sent_msg = await User.send_document(
                             chat_id=GROUP_ID,
                             document=local_filename,
@@ -103,6 +121,8 @@ async def send_new_link_notification(links):
                             text="/qbleech1",
                             reply_to_message_id=sent_msg.id,
                         )
+
+                        # Send to RSS channel
                         await User.send_document(
                             chat_id=RSS_CHAT,
                             document=local_filename,
@@ -115,10 +135,11 @@ async def send_new_link_notification(links):
                         if os.path.exists(local_filename):
                             os.remove(local_filename)
                 else:
-                    logging.warning(f"⚠️ Failed to download: {link['link']}")
+                    logging.warning(f"⚠️ Failed to download: {file_url}")
             else:
-                logging.warning(f"⚠️ Invalid link skipped: {link['link']}")
+                logging.warning(f"⚠️ Invalid link skipped: {file_url}")
 
+# Database class (unchanged)
 class Database:
     def __init__(self, url, db_name):
         self.db = AsyncIOMotorClient(url)[db_name]
@@ -166,4 +187,5 @@ class Database:
                 logging.info(f"[DB] New document inserted: {new_doc['name']}")
                 await send_new_link_notification([link])
 
+# Initialize DB
 db = Database(DATABASE_URL, "MadxBotz_Scrapper")
