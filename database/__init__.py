@@ -12,21 +12,17 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 from configs import *
 
-# Prepare environment
 os.makedirs("downloads", exist_ok=True)
 logging.basicConfig(level=logging.INFO)
 
-# Threaded scraper for Cloudflare-bypassed HTTP requests
 scraper = cloudscraper.create_scraper(delay=10, browser="chrome")
 
 User = Client("User", session_string=USER_SESSION_STRING, api_id=API_ID, api_hash=API_HASH)
 
-# --- Async Utilities --- #
-
 async def fetch(url):
     loop = asyncio.get_event_loop()
     try:
-        response = await loop.run_in_executor(None, lambda: scraper.get(url, timeout=15))
+        response = await loop.run_in_executor(None, lambda: scraper.get(url, timeout=20))
         response.raise_for_status()
         size = int(response.headers.get("Content-Length", 0))
         return response, size
@@ -38,27 +34,49 @@ async def is_valid_link(url):
     response, _ = await fetch(url)
     return response.status_code == 200 if response else False
 
+# ✅ Fixed download_file — safe, retry-based, Cloudflare proof
 async def download_file(url, local_filename):
     max_retries = 5
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept-Encoding": "identity"
+    }
+    loop = asyncio.get_event_loop()
+
     for attempt in range(max_retries):
         try:
-            response, expected_size = await fetch(url)
-            if response:
-                with open(local_filename, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
+            def do_request():
+                with scraper.get(url, headers=headers, stream=True, timeout=60) as response:
+                    response.raise_for_status()
+                    total = int(response.headers.get("Content-Length", 0))
+                    size = 0
 
-                if os.path.getsize(local_filename) == expected_size:
-                    logging.info(f"✅ Downloaded {local_filename} successfully.")
+                    with open(local_filename, "wb") as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+                                size += len(chunk)
+
+                    if total and abs(size - total) > 1024:
+                        logging.warning(f"⚠️ Size mismatch ({size}/{total}) for {url}")
+                        return False
                     return True
-                else:
-                    logging.warning(f"❌ Size mismatch. Retrying {url}")
-                    os.remove(local_filename)
+
+            success = await loop.run_in_executor(None, do_request)
+            if success:
+                logging.info(f"✅ Downloaded {local_filename} successfully.")
+                return True
             else:
-                logging.warning(f"⚠️ Fetch failed: {url} (attempt {attempt+1}/{max_retries})")
+                if os.path.exists(local_filename):
+                    os.remove(local_filename)
+                await asyncio.sleep(2)
+
         except Exception as e:
             logging.error(f"[download_file] Error: {e}")
-        await asyncio.sleep(2)
+            if os.path.exists(local_filename):
+                os.remove(local_filename)
+            await asyncio.sleep(2)
+
     logging.error(f"❌ Failed to download {url} after {max_retries} attempts.")
     return False
 
@@ -74,22 +92,17 @@ async def send_new_link_notification(links):
             if await is_valid_link(link["link"]):
                 if await download_file(link["link"], local_filename):
                     try:
-                        # Send to group
                         sent_msg = await User.send_document(
                             chat_id=GROUP_ID,
                             document=local_filename,
                             thumb="database/thumb.jpg",
                             caption=f"<b>@MOVIES_ADDDDA {link['name']}\n\n<blockquote>〽️ Powered by @MOVIES_ADDDDA</blockquote></b>",
                         )
-
-                        # Trigger command
                         await User.send_message(
                             chat_id=GROUP_ID,
                             text="/qbleech1",
                             reply_to_message_id=sent_msg.id,
                         )
-
-                        # Send to RSS chat
                         await User.send_document(
                             chat_id=RSS_CHAT,
                             document=local_filename,
@@ -105,8 +118,6 @@ async def send_new_link_notification(links):
                     logging.warning(f"⚠️ Failed to download: {link['link']}")
             else:
                 logging.warning(f"⚠️ Invalid link skipped: {link['link']}")
-
-# --- Database Class --- #
 
 class Database:
     def __init__(self, url, db_name):
@@ -155,5 +166,4 @@ class Database:
                 logging.info(f"[DB] New document inserted: {new_doc['name']}")
                 await send_new_link_notification([link])
 
-# Global DB instance
 db = Database(DATABASE_URL, "MadxBotz_Scrapper")
