@@ -15,7 +15,6 @@ import os
 
 message_lock = asyncio.Lock()
 executor = ThreadPoolExecutor()
-
 os.makedirs("downloads", exist_ok=True)
 
 # --- Cloudflare scraper with retries ---
@@ -28,6 +27,7 @@ TAMILBLASTERS_COOKIES = {
     # "ips4_IPSMemberPass": "YOUR_MEMBER_PASS",
 }
 
+# --- Fetch with retries ---
 async def fetch(url):
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -47,6 +47,7 @@ async def fetch(url):
             await asyncio.sleep(2)
     return None
 
+# --- Size converter ---
 def get_size_in_bytes(size_str):
     size_str = size_str.lower()
     size_match = re.search(r"([\d.]+)\s*(gb|mb)", size_str)
@@ -59,6 +60,7 @@ def get_size_in_bytes(size_str):
             return size_value * 1024 * 1024
     return None
 
+# --- Parse forum links ---
 async def parse_links(html):
     soup = BeautifulSoup(html, "html.parser")
     links = []
@@ -102,6 +104,7 @@ async def download_attachment(url, local_filename):
     logging.error(f"❌ Failed to download {url} after {max_retries} attempts")
     return False
 
+# --- Fetch attachments from forum topic ---
 async def fetch_attachments(page_url):
     html = await fetch(page_url)
     if not html:
@@ -192,4 +195,65 @@ async def fetch_attachments(page_url):
     await db.add_document(document)
     return document
 
-# Other functions (start_processing, web server, ping, etc.) remain unchanged
+# --- Start processing forum ---
+async def start_processing():
+    main_page_html = await fetch(BASE_URL)
+    if main_page_html:
+        fetched_links = await parse_links(main_page_html)
+        for li_link in fetched_links:
+            logging.info(f"Fetching attachments from {li_link}")
+            await fetch_attachments(li_link)
+    else:
+        logging.warning("No content found on the main page!")
+
+# --- Web server ---
+routes = web.RouteTableDef()
+
+@routes.get("/", allow_head=True)
+async def root_route_handler(request):
+    return web.json_response("MadxBotz")
+
+async def web_server():
+    web_app = web.Application(client_max_size=30000000)
+    web_app.add_routes(routes)
+    return web_app
+
+# --- Telegram user client ---
+User = Client(
+    "User", session_string=USER_SESSION_STRING, api_hash=API_HASH, api_id=API_ID
+)
+
+# --- User ping ---
+async def ping_server():
+    while True:
+        try:
+            await start_processing()
+        except Exception as e:
+            logging.error(f"Unexpected error: {str(e)}")
+        await asyncio.sleep(60)
+
+# --- Ping main server ---
+async def ping_main_server():
+    try:
+        await User.start()
+        logging.info("User Session started.")
+        await User.send_message(GROUP_ID, "User Session Started")
+    except Exception as e:
+        logging.error(f"Error Starting User: {str(e)}")
+
+    while True:
+        await asyncio.sleep(250)
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                async with session.get(SERVER_URL) as resp:
+                    logging.info("Pinged server with response: {}".format(resp.status))
+        except TimeoutError:
+            logging.warning("Couldn't connect to the site URL.")
+        except Exception:
+            traceback.print_exc()
+
+# --- Stop user session ---
+async def stop_user():
+    await User.send_message(GROUP_ID, "User Session Stopped")
+    await User.stop()
+    logging.info("User Session Stopped.")
